@@ -10,9 +10,13 @@
    
    ======================================================================== */
 
+#ifndef __wasm__
+
 #include <assert.h>
 #include <memory.h>
 #include <stdio.h>
+
+#endif
 
 #include "sim86.h"
 
