@@ -1,8 +1,73 @@
-#define FILE int
+#define FILE output_memory
+#define stdout &OutputMemory
+#define stderr &OutputMemory
+
+void ZeroCharBuffer(char Buffer[256]);
+s32 Interpolate(char Buffer[256], s32 Number, s32 StartIndex);
+s32 Interpolate(char Buffer[256], u32 Number, s32 StartIndex);
+s32 InterpolateSigned(char Buffer[256], s32 Number, s32 StartIndex);
+s32 InterpolateSigned(char Buffer[256], u32 Number, s32 StartIndex);
+void PrintToOutput(char *LogLine, output_memory *OutputBuffer);
 
 void
-fprintf(FILE *a, const char *b, ...)
-{}
+fprintf(FILE *OutputMemory, const char *Pattern, ...)
+{
+  char Buffer[256];
+  ZeroCharBuffer(Buffer);
+
+  s32 PatternIndex = 0;
+  s32 BufferIndex = 0;
+
+  __builtin_va_list args;
+  __builtin_va_start(args, Pattern);
+
+  while (Pattern[PatternIndex] != '\0')
+  {
+    union Printable_t {
+      s32     i;
+      u32     u;
+      char   *s;
+    } Printable;
+
+    char Character = Pattern[PatternIndex++];
+    if (Character != '%')
+    {
+      Buffer[BufferIndex++] = Character;
+    }
+    else 
+    {
+      Character = Pattern[PatternIndex++];
+      if (Character == 'd')
+      {
+        Printable.i = __builtin_va_arg(args, s32);
+        BufferIndex = Interpolate(Buffer, Printable.i, BufferIndex);
+      }
+      else if (Character == 'u')
+      {
+        Printable.u = __builtin_va_arg(args, u32);
+        BufferIndex = Interpolate(Buffer, Printable.u, BufferIndex);
+      }
+      else if (Character == 's')
+      {
+        char *String = __builtin_va_arg(args, char *);
+        while (*String != '\0')
+        {
+          Buffer[BufferIndex++] = *String++;
+        }
+      }
+      else if (Character == '+')
+      {
+        PatternIndex++;
+        Printable.i = __builtin_va_arg(args, s32);
+        BufferIndex = InterpolateSigned(Buffer, Printable.i, BufferIndex);
+      }
+    }
+  }
+
+  __builtin_va_end(args);
+
+  PrintToOutput((char *)Buffer, OutputMemory);
+}
 
 #include "../../sim86_text.cpp"
 
@@ -147,174 +212,3 @@ PrintToOutput(char *LogLine, output_memory *OutputBuffer)
   OutputBuffer->Used += LogLineLength;
 }
 
-static void 
-PrintEffectiveAddressExpressionWasm(effective_address_expression Address, output_memory *Memory)
-{
-  char const *Separator = "";
-  for(u32 Index = 0; Index < ArrayCount(Address.Terms); ++Index)
-  {
-    effective_address_term Term = Address.Terms[Index];
-    register_access Reg = Term.Register;
-
-    if(Reg.Index)
-    {
-      // fprintf(Dest, "%s", Separator);
-      PrintToOutput((char *)Separator, Memory);
-      if(Term.Scale != 1)
-      {
-        char Buffer[256];
-        ZeroCharBuffer(Buffer);
-        s32 End = Interpolate(Buffer, Term.Scale);
-        Buffer[End] = '*';
-        PrintToOutput((char *)Buffer, Memory);
-        // fprintf(Dest, "%d*", Term.Scale);
-      }
-      PrintToOutput((char *)GetRegName(Reg), Memory);
-      // fprintf(Dest, "%s", GetRegName(Reg));
-      Separator = "+";
-    }
-  }
-
-  if(Address.Displacement != 0)
-  {
-    char Buffer[256];
-    ZeroCharBuffer(Buffer);
-    s32 End = InterpolateSigned(Buffer, Address.Displacement);
-    PrintToOutput(Buffer, Memory);
-    // fprintf(Dest, "%+d", Address.Displacement);
-  }
-}
-
-static void 
-PrintInstructionWasm(instruction Instruction, output_memory *Memory)
-{
-  u32 Flags = Instruction.Flags;
-  u32 W = Flags & Inst_Wide;
-
-  if(Flags & Inst_Lock)
-  {
-    if(Instruction.Op == Op_xchg)
-    {
-      // NOTE(casey): This is just a stupidity for matching assembler expectations.
-      instruction_operand Temp = Instruction.Operands[0];
-      Instruction.Operands[0] = Instruction.Operands[1];
-      Instruction.Operands[1] = Temp;
-    }
-    char const *Literal = "lock ";
-    PrintToOutput((char *)Literal, Memory);
-    // fprintf(Dest, "lock ");
-  }
-
-  char const *MnemonicSuffix = "";
-  if(Flags & Inst_Rep)
-  {
-    char const *Literal = "rep ";
-    PrintToOutput((char *)Literal, Memory);
-    // fprintf(Dest, "rep ");
-    MnemonicSuffix = W ? "w" : "b";
-  }
-
-  char Buffer[256];
-  ZeroCharBuffer(Buffer);
-  s32 End = Concat(Buffer, (char *)GetMnemonic(Instruction.Op), (char *)MnemonicSuffix, 0);
-  Buffer[End] = ' ';
-  PrintToOutput((char *)Buffer, Memory);
-  // fprintf(Dest, "%s%s ", GetMnemonic(Instruction.Op), MnemonicSuffix);
-
-  char const *Separator = "";
-  for(u32 OperandIndex = 0; OperandIndex < ArrayCount(Instruction.Operands); ++OperandIndex)
-  {
-    instruction_operand Operand = Instruction.Operands[OperandIndex];
-    if(Operand.Type != Operand_None)
-    {
-      PrintToOutput((char *)Separator, Memory);
-      // fprintf(Dest, "%s", Separator);
-      Separator = ", ";
-
-      switch(Operand.Type)
-      {
-        case Operand_None: {} break;
-
-        case Operand_Register:
-         {
-           PrintToOutput((char *)GetRegName(Operand.Register), Memory);
-           // fprintf(Dest, "%s", GetRegName(Operand.Register));
-         } break;
-
-        case Operand_Memory:
-         {
-           effective_address_expression Address = Operand.Address;
-
-           if(Flags & Inst_Far)
-           {
-             char Literal[] = "far \0";
-             PrintToOutput(Literal, Memory);
-             // fprintf(Dest, "far ");
-           }
-
-           if(Address.Flags & Address_ExplicitSegment)
-           {
-             char Buffer[256];
-             ZeroCharBuffer(Buffer);
-             s32 End = Interpolate(Buffer, Address.ExplicitSegment);
-             End = Concat(Buffer, (char *)"", (char *)":", End);
-             End = Interpolate(Buffer, Address.Displacement, End);
-             PrintToOutput(Buffer, Memory);
-             // fprintf(Dest, "%u:%u", Address.ExplicitSegment, Address.Displacement);
-           }
-           else
-           {
-             if(Instruction.Operands[0].Type != Operand_Register)
-             {
-               if (W) 
-               {
-                 PrintToOutput((char *)"word ", Memory);
-               }
-               else 
-               {
-                 PrintToOutput((char *)"byte ", Memory);
-               }
-               // fprintf(Dest, "%s ", W ? "word" : "byte");
-             }
-
-             if(Flags & Inst_Segment)
-             {
-               char Buffer[256];
-               ZeroCharBuffer(Buffer);
-               Concat(Buffer, (char *)(GetRegName({Instruction.SegmentOverride, 0, 2})), (char *)":");
-               PrintToOutput(Buffer, Memory);
-               // fprintf(Dest, "%s:", GetRegName({Instruction.SegmentOverride, 0, 2}));
-             }
-
-             PrintToOutput((char *)"[", Memory);
-             // fprintf(Dest, "[");
-             PrintEffectiveAddressExpressionWasm(Address, Memory);
-             PrintToOutput((char *)"]", Memory);
-             // fprintf(Dest, "]");
-           }
-         } break;
-
-        case Operand_Immediate:
-         {
-           immediate Immediate = Operand.Immediate;
-           if(Immediate.Flags & Immediate_RelativeJumpDisplacement)
-           {
-             char Buffer[256];
-             ZeroCharBuffer(Buffer);
-             Buffer[0] = '$';
-             Interpolate(Buffer, Immediate.Value + Instruction.Size, 1);
-             // fprintf(Dest, "$%+d", Immediate.Value + Instruction.Size);
-           }
-           else
-           {
-             char Buffer[256];
-             ZeroCharBuffer(Buffer);
-             Interpolate(Buffer, Immediate.Value);
-             PrintToOutput(Buffer, Memory);
-             // fprintf(Dest, "%d", Immediate.Value);
-           }
-         } break;
-      }
-    }
-  }
-}

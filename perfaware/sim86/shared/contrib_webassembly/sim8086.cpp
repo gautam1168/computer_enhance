@@ -16,6 +16,9 @@ struct output_memory
 #include "../../sim86_decode.cpp"
 #include "../../sim86_memory.cpp"
 #include "../../sim86_instruction_table.cpp"
+
+static output_memory OutputMemory;
+
 #include "sim86_text.cpp"
 
 static output_memory 
@@ -59,7 +62,7 @@ static void DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart, ou
         break;
       }
       
-      PrintInstructionWasm(Instruction, OutputMemory);
+      PrintInstruction(Instruction, OutputMemory);
 
       char LogLine[] = "\n\0";
       PrintToOutput(LogLine, OutputMemory);
@@ -131,7 +134,7 @@ extern "C" u8 *
 Entry(u8 *Memory, u32 BytesRead, u64 MaxMemory)
 {
   segmented_access MainMemory = AllocateMemoryPow2(Memory, 20);
-  output_memory OutputMemory = AllocateOutputBuffer(MainMemory, MaxMemory);
+  OutputMemory = AllocateOutputBuffer(MainMemory, MaxMemory);
 
   // Reserve space to store how many bytes to read on javascript side
   u32 *OutputSize = (u32 *)OutputMemory.Base;
