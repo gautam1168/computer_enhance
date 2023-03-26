@@ -22,7 +22,7 @@ struct output_memory
 
 static output_memory OutputMemory;
 
-#include "sim86_stdlibfuncs.cpp"
+#include "custom_fprintf.cpp"
 #include "../../sim86_lib.cpp"
 
 static output_memory 
@@ -42,7 +42,7 @@ AllocateMemoryPow2(u8 *Memory, u32 SizePow2)
   return Result;
 }
 
-static void DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart, output_memory *OutputMemory)
+static void DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart)
 {
   segmented_access At = DisAsmStart;
 
@@ -61,20 +61,16 @@ static void DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart, ou
       }
       else
       {
-        char LogLine[] = "ERROR: Instruction extends outside disassembly region\n\0";
-        PrintToOutput(LogLine, OutputMemory);
+        fprintf(stderr, "ERROR: Instruction extends outside disassembly region\n\0");
         break;
       }
       
-      PrintInstruction(Instruction, OutputMemory);
-
-      char LogLine[] = "\n\0";
-      PrintToOutput(LogLine, OutputMemory);
+      PrintInstruction(Instruction, stdout);
+      fprintf(stdout, "\n\0");
     }
     else
     {
-      char LogLine[] = "ERROR: Unrecognized binary in instruction stream.\n\0";
-      PrintToOutput(LogLine, OutputMemory);
+      fprintf(stderr, "ERROR: Unrecognized binary in instruction stream.\n\0");
       break;
     }
   }
@@ -91,15 +87,10 @@ Entry(u8 *Memory, u32 BytesRead, u64 MaxMemory)
   OutputMemory.Used = 4;
 
   // Do the disassembly
-  DisAsm8086Wasm(BytesRead, MainMemory, &OutputMemory);
+  DisAsm8086Wasm(BytesRead, MainMemory);
 
   // Add the number of bytes to read excluding the number itself
   *OutputSize = OutputMemory.Used;
   return OutputMemory.Base;
 }
 
-extern "C" void
-TriggerTrap()
-{
-  assert(0);
-}
