@@ -1,6 +1,14 @@
-#include "../sim86_shared.h"
-#include "../../sim86_memory.h"
-#include "../../sim86_decode.h"
+typedef char unsigned u8;
+typedef short unsigned u16;
+typedef int unsigned u32;
+typedef long long unsigned u64;
+
+typedef char s8;
+typedef short s16;
+typedef int s32;
+typedef long long s64;
+
+typedef s32 b32;
 
 #define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
 #define assert(expression) if (!(expression)) { __builtin_trap(); }
@@ -12,14 +20,10 @@ struct output_memory
   u64 Used; // Bytes
 };
 
-#include "../../sim86_instruction.cpp"
-#include "../../sim86_decode.cpp"
-#include "../../sim86_memory.cpp"
-#include "../../sim86_instruction_table.cpp"
-
 static output_memory OutputMemory;
 
-#include "sim86_text.cpp"
+#include "sim86_stdlibfuncs.cpp"
+#include "../../sim86_lib.cpp"
 
 static output_memory 
 AllocateOutputBuffer(segmented_access MainMemory, u64 MaxMemory)
@@ -74,60 +78,6 @@ static void DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart, ou
       break;
     }
   }
-}
-
-void 
-memcpy(u8 *Destination, u8 *Source, u32 SourceSize)
-{
-	__builtin_memcpy(Destination, Source, SourceSize);
-}
-
-extern "C" u32 
-Sim86_GetVersion(void)
-{
-  u32 Result = SIM86_VERSION;
-  return Result;
-}
-
-extern "C" void 
-Sim86_Decode8086Instruction(u32 SourceSize, u8 *Source, instruction *Dest)
-{
-  instruction_table Table = Get8086InstructionTable();
-
-  // Note left by Casey Muratori. I'm just leaving it as is.
-  // NOTE(casey): The 8086 decoder requires the ability to read up to 15 bytes (the maximum
-  // allowable instruction size)
-  assert(Table.MaxInstructionByteCount == 15);
-  u8 GuardBuffer[16] = {};
-  if(SourceSize < Table.MaxInstructionByteCount)
-  {
-    memcpy(GuardBuffer, Source, SourceSize);
-    Source = GuardBuffer;
-  }
-
-  segmented_access At = FixedMemoryPow2(4, Source);
-
-  *Dest = DecodeInstruction(Table, At);;
-}
-
-extern "C" char const *
-Sim86_RegisterNameFromOperand(register_access *RegAccess)
-{
-  char const *Result = GetRegName(*RegAccess);
-  return Result;
-}
-
-extern "C" char const *
-Sim86_MnemonicFromOperationType(operation_type Type)
-{
-  char const *Result = GetMnemonic(Type);
-  return Result;
-}
-
-extern "C" void 
-Sim86_Get8086InstructionTable(instruction_table *Dest)
-{
-  *Dest = Get8086InstructionTable();
 }
 
 extern "C" u8 * 

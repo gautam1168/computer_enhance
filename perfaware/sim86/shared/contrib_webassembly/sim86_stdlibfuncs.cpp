@@ -69,8 +69,6 @@ fprintf(FILE *OutputMemory, const char *Pattern, ...)
   PrintToOutput((char *)Buffer, OutputMemory);
 }
 
-#include "../../sim86_text.cpp"
-
 void
 ZeroCharBuffer(char Buffer[256])
 {
@@ -212,3 +210,8 @@ PrintToOutput(char *LogLine, output_memory *OutputBuffer)
   OutputBuffer->Used += LogLineLength;
 }
 
+void 
+memcpy(u8 *Destination, u8 *Source, u32 SourceSize)
+{
+	__builtin_memcpy(Destination, Source, SourceSize);
+}
