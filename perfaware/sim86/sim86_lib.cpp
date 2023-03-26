@@ -72,3 +72,4 @@ extern "C" void Sim86_Get8086InstructionTable(instruction_table *Dest)
 {
     *Dest = Get8086InstructionTable();
 }
+
