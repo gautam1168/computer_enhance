@@ -2,6 +2,8 @@
 #include "custom_fprintf.cpp"
 #include "../../sim86_lib.cpp"
 
+register_bank RegisterBank = {};
+
 static output_memory 
 AllocateOutputBuffer(segmented_access MainMemory, u64 MaxMemory)
 {
@@ -19,7 +21,8 @@ AllocateMemoryPow2(u8 *Memory, u32 SizePow2)
   return Result;
 }
 
-static void DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart)
+static void 
+DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart)
 {
   segmented_access At = DisAsmStart;
 
@@ -71,3 +74,94 @@ Entry(u8 *Memory, u32 BytesRead, u64 MaxMemory)
   return OutputMemory.Base;
 }
 
+void
+SetRegister(register_access Register, u16 Value)
+{
+  u8 NumRegisters = ArrayCount(RegisterBank.Registers);
+  u8 RegisterIndex = Register.Index % NumRegisters;
+
+  if (Register.Count == 2) 
+  {
+    // Full
+    RegisterBank.Registers[RegisterIndex] = Value;
+  }
+  else if ((Register.Offset & 1) == 0)
+  {
+    // Low
+    u8 CurrentHigh = RegisterBank.Registers[RegisterIndex] >> 8;
+    RegisterBank.Registers[RegisterIndex] = (CurrentHigh << 8) | Value;
+  }
+  else 
+  {
+    // High
+    u8 CurrentLow = RegisterBank.Registers[RegisterIndex] & 0xff;
+    RegisterBank.Registers[RegisterIndex] = (Value << 8) | CurrentLow;
+  }
+}
+
+u16
+GetRegister(register_access Register)
+{
+  u16 Result = 0;
+  u8 NumRegisters = ArrayCount(RegisterBank.Registers);
+  u8 RegisterIndex = Register.Index % NumRegisters;
+
+  if (Register.Count == 2) 
+  {
+    // Full
+    Result = RegisterBank.Registers[RegisterIndex];
+  }
+  else if ((Register.Offset & 1) == 0)
+  {
+    // Low
+    Result = RegisterBank.Registers[RegisterIndex] & 0xff;
+  }
+  else 
+  {
+    // High
+    Result = RegisterBank.Registers[RegisterIndex] >> 8;
+  }
+
+  return Result;
+}
+
+extern "C" register_bank *
+Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
+{
+  segmented_access MainMemory = AllocateMemoryPow2(Memory, 20); 
+  OutputMemory = AllocateOutputBuffer(MainMemory, MaxMemory);
+
+  instruction_table Table = Get8086InstructionTable();
+  
+  MainMemory = MoveBaseBy(MainMemory, RegisterBank.CurrentByte);
+
+  instruction Instruction = DecodeInstruction(Table, MainMemory);
+  RegisterBank.CurrentByte += Instruction.Size;
+  RegisterBank.CurrentInstruction += 1;
+  if (RegisterBank.CurrentByte >= BytesRead) 
+  {
+    RegisterBank.CurrentByte = 0;
+    RegisterBank.CurrentInstruction = 0;
+  }
+  
+  if (Instruction.Op == Op_mov)
+  {
+    if (Instruction.Operands[1].Type == Operand_Immediate)
+    {
+      u16 ImmediateValue = (u16)(Instruction.Operands[1].Immediate.Value);
+      SetRegister(Instruction.Operands[0].Register, ImmediateValue);
+    } 
+    else 
+    {
+      u16 Value = GetRegister(Instruction.Operands[1].Register);
+      SetRegister(Instruction.Operands[0].Register, Value);
+    }
+  }
+  else 
+  {
+    // No other instructions have been implemented
+    assert(0);
+  }
+
+  return &RegisterBank;
+}

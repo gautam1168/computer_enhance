@@ -1,3 +1,5 @@
+static output_memory OutputMemory;
+
 #define FILE output_memory
 #define stdout &OutputMemory
 #define stderr &OutputMemory

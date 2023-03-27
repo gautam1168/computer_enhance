@@ -20,4 +20,9 @@ struct output_memory
   u64 Used; // Bytes
 };
 
-static output_memory OutputMemory;
+struct register_bank
+{
+  u32 CurrentByte;
+  u32 CurrentInstruction;
+  u16 Registers[15];
+};

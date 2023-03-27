@@ -1,7 +1,6 @@
 <html>
   <head>
     <title>sim8086</title>
-    <script src="./lib.js" async></script>
     <style>
 * 
 {
@@ -31,13 +30,11 @@
     <div id="display">
       <div id="input"></div>
       <div id="output"></div>
+      <button id="stepper">Step</button>
     </div>
     <script type="module">
       import { main } from "./main.js"
       main();
-      window.onload = function() {
-        loadLibrary().then(clib => window.clib = clib);
-      }
     </script>
   </body>
 </html>

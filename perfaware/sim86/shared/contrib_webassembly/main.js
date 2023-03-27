@@ -1,8 +1,9 @@
+let filebytes;
 async function onFile(ev, view, instance) {
   const offset = instance.exports.__heap_base;
   const file = ev.target.files[0];
   const buffer = await file.arrayBuffer();
-  const filebytes = new Uint8Array(buffer);
+  filebytes = new Uint8Array(buffer);
   view.set(filebytes, offset);
 
   const MaxMemory = BigInt(view.length - offset);
@@ -46,5 +47,34 @@ export async function main() {
   filePicker.addEventListener("change", 
     (ev) => onFile(ev, view, instance)
   );
+
+  const stepper = document.querySelector("button#stepper");
+  stepper.addEventListener("click", () => {
+    const offset = instance.exports.__heap_base;
+    const MaxMemory = BigInt(view.length - offset);
+    const registerOffset = instance.exports.Step(offset, filebytes.length, MaxMemory);
+    const wordView = new Uint32Array(view.buffer, registerOffset);
+    const currentOffset = wordView[0];
+    const currentInstruction = wordView[1];
+    const registers = new Uint16Array(view.buffer, registerOffset + 4);
+    console.log(`
+      currentOffset: ${currentOffset},
+      currentInstruction: ${currentInstruction},
+      AX: ${registers[1]},
+      BX: ${registers[2]},
+      CX: ${registers[3]},
+      DX: ${registers[4]},
+      SP: ${registers[5]},
+      BP: ${registers[6]},
+      SI: ${registers[7]},
+      DI: ${registers[8]},
+      ES: ${registers[9]},
+      CS: ${registers[10]},
+      SS: ${registers[11]},
+      DS: ${registers[12]},
+      IP: ${registers[13]},
+      FLAGS: ${registers[14]},
+      `);
+  });
 }
 
