@@ -24,5 +24,39 @@ struct register_bank
 {
   u32 CurrentByte;
   u32 CurrentInstruction;
+  // AX, BX, CX, DX, SP, BP, SI, DI, ES, CS, SS, DS, IP, FLAGS
   u16 Registers[15];
 };
+
+// FLAGS
+// _,_,_,_, OF,DF,IF,TF, SF,ZF,_,AF, _,PF,_CF
+// OF -> Overflow flag
+// SF -> Sign flag
+// ZF -> Zero flag (Result of the operation is 0)
+// AF -> Auxiliary Carry Flag (Carry from low nibble to high or a borrow)
+// PF -> Parity flag is set when the result has an even number of set bits
+// CF -> Carry flag is set when there has been a carry or borrow involving the high bit
+enum flag_register_masks
+{
+  OF_mask = 0x0800,
+  DF_mask = 0x0400,
+  SF_mask = 0x0080,
+  ZF_mask = 0x0040,
+  AF_mask = 0x0010,
+  PF_mask = 0x0004,
+  CF_mask = 0x0001
+};
+
+struct flags {
+  u16 OF;
+  u16 DF;
+  u16 IF;
+  u16 TF;
+  u16 SF;
+  u16 ZF;
+  u16 AF;
+  u16 PF;
+  u16 CF;
+};
+
+

@@ -56,7 +56,7 @@ export async function main() {
     const wordView = new Uint32Array(view.buffer, registerOffset);
     const currentOffset = wordView[0];
     const currentInstruction = wordView[1];
-    const registers = new Uint16Array(view.buffer, registerOffset + 4);
+    const registers = new Uint16Array(view.buffer, registerOffset + 8);
     console.log(`
       currentOffset: ${currentOffset},
       currentInstruction: ${currentInstruction},
