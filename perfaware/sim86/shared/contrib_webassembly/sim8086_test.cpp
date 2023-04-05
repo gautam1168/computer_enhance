@@ -45,6 +45,7 @@ DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart)
         break;
       }
       
+      fprintf(stdout, "%d; ", Instruction.Size);
       PrintInstruction(Instruction, stdout);
       fprintf(stdout, "\n\0");
     }
@@ -136,7 +137,7 @@ RegisterToFlags(u16 FlagsRegister)
   Result.SF = (0x0080 & FlagsRegister) >> 7;
   Result.ZF = (0x0040 & FlagsRegister) >> 6;
   Result.AF = (0x0010 & FlagsRegister) >> 4;
-  Result.PF = (0x0002 & FlagsRegister) >> 2;
+  Result.PF = (0x0004 & FlagsRegister) >> 2;
   Result.CF = (0x0001 & FlagsRegister);
   return Result;
 }
@@ -367,16 +368,18 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
 
   instruction_table Table = Get8086InstructionTable();
   
-  MainMemory = MoveBaseBy(MainMemory, RegisterBank.CurrentByte);
+  MainMemory = MoveBaseBy(MainMemory, RegisterBank.Registers[13]);
 
   instruction Instruction = DecodeInstruction(Table, MainMemory);
-  RegisterBank.CurrentByte += Instruction.Size;
+  RegisterBank.Registers[13] += Instruction.Size;
   RegisterBank.CurrentInstruction += 1;
-  if (RegisterBank.CurrentByte >= BytesRead) 
+  /*
+  if (RegisterBank.Registers[13] >= BytesRead) 
   {
-    RegisterBank.CurrentByte = 0;
+    RegisterBank.Registers[13] = 0;
     RegisterBank.CurrentInstruction = 0;
   }
+  */
   
   if (Instruction.Op == Op_mov)
   {
@@ -443,6 +446,98 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     SetRegister(Instruction.Operands[0].Register, Result.Value);
 
     SetFlags(Result);
+  }
+  else if (Instruction.Op == Op_jne)
+  {
+    s32 SourceValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Cannot jump to non immediate address");
+    }
+    
+    flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
+    if (Flags.ZF == 0)
+    {
+      RegisterBank.Registers[13] += SourceValue;
+    }
+  }
+  else if (Instruction.Op == Op_je)
+  {
+    s32 SourceValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Cannot jump to non immediate address");
+    }
+    
+    flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
+    if (Flags.ZF == 1)
+    {
+      RegisterBank.Registers[13] += SourceValue;
+    }
+  }
+  else if (Instruction.Op == Op_jp)
+  {
+    s32 SourceValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Cannot jump to non immediate address");
+    }
+    
+    flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
+    if (Flags.PF == 1)
+    {
+      RegisterBank.Registers[13] += SourceValue;
+    }
+  }
+  else if (Instruction.Op == Op_jb)
+  {
+    s32 SourceValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Cannot jump to non immediate address");
+    }
+    
+    flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
+    if (Flags.CF == 1)
+    {
+      RegisterBank.Registers[13] += SourceValue;
+    }
+  }
+  else if (Instruction.Op == Op_loopnz)
+  {
+    s32 SourceValue;
+    // CX register is 3
+    RegisterBank.Registers[3] -= 1;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Cannot jump to non immediate address");
+    }
+    
+    flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
+    if (Flags.ZF == 0 && RegisterBank.Registers[3] != 0)
+    {
+      RegisterBank.Registers[13] += SourceValue;
+    }
   }
   else 
   {
