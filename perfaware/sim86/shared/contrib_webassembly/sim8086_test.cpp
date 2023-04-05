@@ -225,9 +225,7 @@ BitwiseAdd(u16 A, u16 B)
       assert(!"Invalid state during addition!");
     }
 
-    // TODO: Auxiliary flag is only captured for low byte of 16bit value
-    // Implement the nibble thing
-    if ((BitIndex == 7) && (CarryBit == 1))
+    if ((BitIndex == 7 || BitIndex == 3) && (CarryBit == 1))
     {
       Result.AuxiliaryCarry = true;
     }
@@ -310,7 +308,7 @@ BitwiseSub(u16 A, u16 B)
 
   // TODO: Auxiliary flag is only captured for low byte of 16bit value
   // Implement the nibble thing
-  if (Borrow[7] > 0)
+  if (Borrow[3] > 0 || Borrow[7] > 0)
   {
     Result.AuxiliaryCarry = true;
   }
