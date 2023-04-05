@@ -36,16 +36,6 @@ struct register_bank
 // AF -> Auxiliary Carry Flag (Carry from low nibble to high or a borrow)
 // PF -> Parity flag is set when the result has an even number of set bits
 // CF -> Carry flag is set when there has been a carry or borrow involving the high bit
-enum flag_register_masks
-{
-  OF_mask = 0x0800,
-  DF_mask = 0x0400,
-  SF_mask = 0x0080,
-  ZF_mask = 0x0040,
-  AF_mask = 0x0010,
-  PF_mask = 0x0004,
-  CF_mask = 0x0001
-};
 
 struct flags {
   u16 OF;
@@ -59,4 +49,10 @@ struct flags {
   u16 CF;
 };
 
-
+struct bitwise_add_result
+{
+  s16 Value;
+  bool AuxiliaryCarry;
+  bool Carry;
+  bool Overflow;
+};

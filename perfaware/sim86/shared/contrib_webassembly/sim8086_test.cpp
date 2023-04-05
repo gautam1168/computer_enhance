@@ -144,15 +144,188 @@ RegisterToFlags(u16 FlagsRegister)
 u16
 FlagsToRegister(flags Flags)
 {
-  u16 Result = (Flags.OF << 11) || 
-    (Flags.DF << 10) ||
-    (Flags.IF << 9) ||
-    (Flags.TF << 8) ||
-    (Flags.SF << 7) ||
-    (Flags.ZF << 6) ||
-    (Flags.AF << 4) ||
-    (Flags.PF << 2) ||
+  u16 Result = (Flags.OF << 11) | 
+    (Flags.DF << 10) |
+    (Flags.IF << 9) |
+    (Flags.TF << 8) |
+    (Flags.SF << 7) |
+    (Flags.ZF << 6) |
+    (Flags.AF << 4) |
+    (Flags.PF << 2) |
     (Flags.CF);
+
+  return Result;
+}
+
+inline s32
+CountBits(s32 Number)
+{
+  s32 NumBits = 0;
+  while (Number) 
+  {
+    NumBits += ((Number & 0x1) == 1) ? 1 : 0;
+    Number = Number >> 1;
+  }
+  return NumBits;
+}
+
+inline bool
+IsParityEven(s32 Result)
+{
+  u8 LowEightBits = Result & 0xff;
+  s32 NumSetBits = CountBits(LowEightBits);
+  bool IsEven = ((NumSetBits % 2) == 0);
+  return IsEven;
+}
+
+inline bool
+OverflownBitsPresent(s32 Result)
+{
+  u16 OverflownBits = Result >> 16;
+  s32 NumSetBits = CountBits(OverflownBits);
+  return NumSetBits > 0;
+}
+
+inline bitwise_add_result
+BitwiseAdd(u16 A, u16 B)
+{
+  s16 Addand = (s16)A;
+  s16 Addee = (s16)B;
+  bitwise_add_result Result = {};
+  s32 CarryBit = 0;
+  for (s32 BitIndex = 0; BitIndex < 16; ++BitIndex)
+  {
+    s32 ABit = A & 0b1;
+    A = A >> 1;
+    s32 BBit = B & 0b1;
+    B = B >> 1;
+    s32 Value = ABit + BBit + CarryBit;
+    if (Value == 0)
+    {
+      Result.Value = Result.Value | (0 << BitIndex);
+      CarryBit = 0;
+    }
+    else if (Value == 1)
+    {
+      Result.Value = Result.Value | (1 << BitIndex);
+      CarryBit = 0;
+    }
+    else if (Value == 2)
+    {
+      Result.Value = Result.Value | (0 << BitIndex);
+      CarryBit = 1;
+    }
+    else if (Value == 3)
+    {
+      Result.Value = Result.Value | (1 << BitIndex);
+      CarryBit = 1;
+    }
+    else
+    {
+      assert(!"Invalid state during addition!");
+    }
+
+    // TODO: Auxiliary flag is only captured for low byte of 16bit value
+    // Implement the nibble thing
+    if ((BitIndex == 7) && (CarryBit == 1))
+    {
+      Result.AuxiliaryCarry = true;
+    }
+
+    if (BitIndex == 15 && CarryBit == 1)
+    {
+      Result.Carry = true;
+    }
+
+    if ((Addand > 0 && Addee > 0 && Result.Value < 0) || 
+        (Addand < 0 && Addee < 0 && Result.Value > 0))
+    {
+      Result.Overflow = true;
+    }
+  }
+
+  return Result;
+}
+
+inline u16
+GetTwosComplement(s16 Value)
+{
+  u16 Result = 0;
+  for (s32 BitIndex = 0; BitIndex < 16; ++BitIndex)
+  {
+    Result = Result | (!(Value & 0b1) << BitIndex);
+  }
+
+  BitwiseAdd(Result, 1);
+  return Result;
+}
+
+inline bitwise_add_result
+BitwiseSub(u16 A, u16 B)
+{
+  s16 Minuhend = (s16)A;
+  s16 Subtrahend = (s16)B;
+  bitwise_add_result Result = {};
+
+  s32 Borrow[16];
+  s32 ABits[16];
+  s32 BBits[16];
+  for (s32 BorrowArrayIndex = 0;
+      BorrowArrayIndex < 16;
+      ++BorrowArrayIndex)
+  {
+    Borrow[BorrowArrayIndex] = 0;
+    ABits[BorrowArrayIndex] = A & 0b1;
+    A = A >> 1;
+    BBits[BorrowArrayIndex] = B & 0b1;
+    B = B >> 1;
+  }
+
+  for (s32 BitIndex = 0; BitIndex < 16; ++BitIndex)
+  {
+    s32 ABit = ABits[BitIndex];
+    s32 BBit = BBits[BitIndex];
+    
+    if (ABit < BBit) 
+    {
+      ABit = 2;
+      Borrow[BitIndex] = 2;
+      s32 CurrentIndex = BitIndex + 1;
+      while (ABits[CurrentIndex] != 1 && CurrentIndex < 16)
+      {
+        Borrow[CurrentIndex] = 1;
+        ABits[CurrentIndex++] = 1;
+      }
+
+      ABits[CurrentIndex] = 0;
+      s32 Value = ABit - BBit;
+      Result.Value = Result.Value | (Value << BitIndex);
+    }
+    else 
+    {
+      s32 Value = ABit - BBit;
+      Result.Value = Result.Value | (Value << BitIndex);
+    }
+  }
+
+  // TODO: Auxiliary flag is only captured for low byte of 16bit value
+  // Implement the nibble thing
+  if (Borrow[7] > 0)
+  {
+    Result.AuxiliaryCarry = true;
+  }
+
+  if (Borrow[15] > 0)
+  {
+    Result.Carry = true;
+  }
+
+  if ((Minuhend < 0 && Subtrahend > 0 && Result.Value > 0) || 
+      (Minuhend > 0 && Subtrahend < 0 && Result.Value < 0))
+  {
+    Result.Overflow = true;
+  }
+  
 
   return Result;
 }
@@ -163,10 +336,27 @@ SetFlags(s32 Result)
   u16 FlagsRegister = RegisterBank.Registers[14];
   flags Flags = RegisterToFlags(FlagsRegister);
   // Flags to update AF, CF, OF, PF, SF, ZF
-  Flags.OF = (Result > 65535) ? 1 : 0;
+  Flags.OF = (Result > 32767) ? 1 : 0;
   Flags.SF = (((Result & 0x8000) >> 15) == 1) ? 1 : 0;
   Flags.ZF = (Result == 0) ? 1 : 0;
-  Flags.CF = ((Result > 65535) || (Result < -65536)) ? 1 : 0;
+  Flags.CF = OverflownBitsPresent(Result >> 16) ? 1 : 0;
+  Flags.PF = IsParityEven(Result) ? 1 : 0;
+  u16 FinalRegister = FlagsToRegister(Flags);
+  RegisterBank.Registers[14] = FinalRegister;
+}
+
+inline void
+SetFlags(bitwise_add_result Result)
+{
+  u16 FlagsRegister = RegisterBank.Registers[14];
+  flags Flags = RegisterToFlags(FlagsRegister);
+  // Flags to update AF, CF, OF, PF, SF, ZF
+  Flags.OF = Result.Overflow ? 1 : 0;
+  Flags.SF = (((Result.Value & 0x8000) >> 15) == 1) ? 1 : 0;
+  Flags.ZF = (Result.Value == 0) ? 1 : 0;
+  Flags.CF = Result.Carry ? 1 : 0;
+  Flags.PF = IsParityEven(Result.Value) ? 1 : 0;
+  Flags.AF = Result.AuxiliaryCarry ? 1 : 0;
   u16 FinalRegister = FlagsToRegister(Flags);
   RegisterBank.Registers[14] = FinalRegister;
 }
@@ -216,8 +406,8 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     }
 
     s32 DestValue = GetRegister(Instruction.Operands[0].Register);
-    s32 Result = DestValue + SourceValue;
-    SetRegister(Instruction.Operands[0].Register, Result);
+    bitwise_add_result Result = BitwiseAdd(DestValue, SourceValue);
+    SetRegister(Instruction.Operands[0].Register, Result.Value);
 
     SetFlags(Result);
   }
@@ -234,7 +424,7 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     }
 
     s32 DestValue = GetRegister(Instruction.Operands[0].Register);
-    s32 Result = DestValue - SourceValue;
+    bitwise_add_result Result = BitwiseSub((u16)DestValue, (u16)SourceValue);
 
     SetFlags(Result);
   }
@@ -251,8 +441,8 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     }
 
     s32 DestValue = GetRegister(Instruction.Operands[0].Register);
-    s32 Result = DestValue - SourceValue;
-    SetRegister(Instruction.Operands[0].Register, Result);
+    bitwise_add_result Result = BitwiseSub((u16)DestValue, (u16)SourceValue);
+    SetRegister(Instruction.Operands[0].Register, Result.Value);
 
     SetFlags(Result);
   }
