@@ -126,6 +126,43 @@ GetRegister(register_access Register)
   return Result;
 }
 
+u32
+MemoryOperandToAddressOffset(instruction_operand Operand, u32 Flags)
+{
+  u32 Result = 0;
+  assert(Operand.Type == Operand_Memory);
+  effective_address_expression Address = Operand.Address;
+
+  if (Address.Flags & Address_ExplicitSegment)
+  {
+    assert(!"Not implemented explicit segment stuff!");
+  }
+
+  if (Flags & Inst_Segment)
+  {
+    assert(!"Not implemented instruction segment stuff!");
+  }
+
+  for (u32 Index = 0; Index < ArrayCount(Address.Terms); ++Index)
+  {
+    effective_address_term Term = Address.Terms[Index];
+    register_access Reg = Term.Register;
+
+    if (Reg.Index)
+    {
+      u32 RegisterValue = GetRegister(Reg);
+      if (Term.Scale != 1)
+      {
+        RegisterValue *= Term.Scale;
+      }
+      Result += RegisterValue;
+    }
+  }
+
+  Result += Address.Displacement;
+  return Result;
+}
+
 flags 
 RegisterToFlags(u16 FlagsRegister)
 {
@@ -363,15 +400,20 @@ SetFlags(bitwise_add_result Result)
 extern "C" register_bank *
 Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
 {
-  segmented_access MainMemory = AllocateMemoryPow2(Memory, 20); 
-  OutputMemory = AllocateOutputBuffer(MainMemory, MaxMemory);
+  segmented_access CodeSegment = FixedMemoryPow2(20, Memory); 
+  s32 CodeSegmentAddress = GetAbsoluteAddressOf(CodeSegment, 0);
+  // 64KB = 1 << 16
+  segmented_access DataSegment = MoveBaseBy(CodeSegment, (1 << 16));
+  s32 DataSegmentAddress = GetAbsoluteAddressOf(DataSegment, 0);
+  OutputMemory = AllocateOutputBuffer(CodeSegment, MaxMemory);
 
   instruction_table Table = Get8086InstructionTable();
   
-  MainMemory = MoveBaseBy(MainMemory, RegisterBank.Registers[13]);
+  u16 *IP = &RegisterBank.Registers[13];
+  segmented_access At = MoveBaseBy(CodeSegment, *IP);
 
-  instruction Instruction = DecodeInstruction(Table, MainMemory);
-  RegisterBank.Registers[13] += Instruction.Size;
+  instruction Instruction = DecodeInstruction(Table, At);
+  *IP += Instruction.Size;
   RegisterBank.CurrentInstruction += 1;
   /*
   if (RegisterBank.Registers[13] >= BytesRead) 
@@ -383,14 +425,41 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
   
   if (Instruction.Op == Op_mov)
   {
-    if (Instruction.Operands[1].Type == Operand_Immediate)
+    if (Instruction.Operands[0].Type == Operand_Register && 
+        Instruction.Operands[1].Type == Operand_Immediate)
     {
       u16 ImmediateValue = (u16)(Instruction.Operands[1].Immediate.Value);
       SetRegister(Instruction.Operands[0].Register, ImmediateValue);
     } 
-    else 
+    else if (Instruction.Operands[0].Type == Operand_Register &&
+        Instruction.Operands[1].Type == Operand_Register)
     {
       u16 Value = GetRegister(Instruction.Operands[1].Register);
+      SetRegister(Instruction.Operands[0].Register, Value);
+    }
+    else if (Instruction.Operands[0].Type == Operand_Memory &&
+        Instruction.Operands[1].Type == Operand_Immediate)
+    {
+      u16 LogicalAddress = MemoryOperandToAddressOffset(Instruction.Operands[0], Instruction.Flags);
+      u16 Value = Instruction.Operands[1].Immediate.Value; 
+      u8 *MemoryLocation = AccessMemory(DataSegment, LogicalAddress);
+
+      u8 ValueLow = Value & 0xff;
+      u8 ValueHigh = Value >> 8;
+      
+      *MemoryLocation++ = ValueLow;
+      *MemoryLocation++ = ValueHigh;
+    }
+    else if (Instruction.Operands[0].Type == Operand_Register &&
+        Instruction.Operands[1].Type == Operand_Memory)
+    {
+      u16 LogicalAddress = MemoryOperandToAddressOffset(Instruction.Operands[1], Instruction.Flags);
+      u8 *MemoryLocation = AccessMemory(DataSegment, LogicalAddress);
+
+      u8 ValueLow = *MemoryLocation++;
+      u8 ValueHigh = *MemoryLocation++;
+      
+      u16 Value = (ValueHigh << 8) | ValueLow;
       SetRegister(Instruction.Operands[0].Register, Value);
     }
   }
@@ -462,7 +531,7 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
     if (Flags.ZF == 0)
     {
-      RegisterBank.Registers[13] += SourceValue;
+      *IP += SourceValue;
     }
   }
   else if (Instruction.Op == Op_je)
@@ -480,7 +549,7 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
     if (Flags.ZF == 1)
     {
-      RegisterBank.Registers[13] += SourceValue;
+      *IP += SourceValue;
     }
   }
   else if (Instruction.Op == Op_jp)
@@ -498,7 +567,7 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
     if (Flags.PF == 1)
     {
-      RegisterBank.Registers[13] += SourceValue;
+      *IP += SourceValue;
     }
   }
   else if (Instruction.Op == Op_jb)
@@ -516,7 +585,7 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
     if (Flags.CF == 1)
     {
-      RegisterBank.Registers[13] += SourceValue;
+      *IP += SourceValue;
     }
   }
   else if (Instruction.Op == Op_loopnz)
@@ -536,7 +605,7 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
     if (Flags.ZF == 0 && RegisterBank.Registers[3] != 0)
     {
-      RegisterBank.Registers[13] += SourceValue;
+      *IP += SourceValue;
     }
   }
   else 

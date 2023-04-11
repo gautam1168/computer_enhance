@@ -30,14 +30,14 @@ static u32 GetAbsoluteAddressOf(segmented_access SegMem, u16 Offset)
 
 static segmented_access MoveBaseBy(segmented_access Access, s32 Offset)
 {
-    Access.SegmentOffset += Offset;
+    s32 NewOffset = (s32)Access.SegmentOffset + Offset;
     
     segmented_access Result = Access;
     
-    Result.SegmentBase += (Result.SegmentOffset >> 4);
-    Result.SegmentOffset &= 0xf;
+    Result.SegmentBase += (NewOffset >> 4);
+    Result.SegmentOffset = NewOffset & 0xf;
 
-    assert(GetAbsoluteAddressOf(Result, 0) == GetAbsoluteAddressOf(Access, 0));
+    // assert(GetAbsoluteAddressOf(Result, 0) == GetAbsoluteAddressOf(Access, 0));
     
     return Result;
 }
