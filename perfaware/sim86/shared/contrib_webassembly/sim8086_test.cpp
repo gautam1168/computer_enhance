@@ -462,6 +462,23 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
       u16 Value = (ValueHigh << 8) | ValueLow;
       SetRegister(Instruction.Operands[0].Register, Value);
     }
+    else if (Instruction.Operands[0].Type == Operand_Memory &&
+        Instruction.Operands[1].Type == Operand_Register)
+    {
+      u16 LogicalAddress = MemoryOperandToAddressOffset(Instruction.Operands[0], Instruction.Flags);
+      u16 Value = GetRegister(Instruction.Operands[1].Register);
+      u8 *MemoryLocation = AccessMemory(DataSegment, LogicalAddress);
+
+      u8 ValueLow = Value & 0xff;
+      u8 ValueHigh = Value >> 8;
+
+      *MemoryLocation++ = ValueLow;
+      *MemoryLocation++ = ValueHigh;
+    }
+    else 
+    {
+      assert(!"Move variant not implemented!");
+    }
   }
   else if (Instruction.Op == Op_add)
   {
