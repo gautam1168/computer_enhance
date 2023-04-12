@@ -625,6 +625,26 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
       *IP += SourceValue;
     }
   }
+  else if (Instruction.Op == Op_loop)
+  {
+    s32 SourceValue;
+    // CX register is 3
+    RegisterBank.Registers[3] -= 1;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Cannot jump to non immediate address");
+    }
+    
+    flags Flags = RegisterToFlags(RegisterBank.Registers[14]);
+    if (RegisterBank.Registers[3] != 0)
+    {
+      *IP += SourceValue;
+    }
+  }
   else 
   {
     // No other instructions have been implemented
