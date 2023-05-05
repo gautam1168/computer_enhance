@@ -21,6 +21,234 @@ AllocateMemoryPow2(u8 *Memory, u32 SizePow2)
   return Result;
 }
 
+enum ea_cycles : u32
+{
+  Disp_Only = 6,
+  Base_Or_Index_Only = 5, // BX,BP,SI,DI 
+  Displacement_Plus_Base_Or_Index = 9, // BX,BP,SI,DI
+  Base_Plus_Index_BPDI_BXSI = 7, // BP + DI, BX + SI
+  Base_Plus_Index_BPSI_BXDI = 8, // BP + SI, BX + SI
+  Disp_Base_Index_BPDIDISP_BXSIDISP = 11, // BP + DI + DISP, BX + SI + DISP
+  Disp_Base_Index_BPSIDISP_BXDIDISP = 12 // BP + SI + DISP, BX + DI + DISP                                          
+};
+
+inline bool 
+Cmp(const char *Source, const char *Dest)
+{
+  bool Result = true;
+  if (*Source != 0 && *Dest != 0)
+  {
+    while (*Source != 0 && *Dest != 0)
+    {
+      Result = Result && (*Source == *Dest);
+      Source += 1;
+      Dest += 1;
+    }
+  }
+  else
+  {
+    Result = false;
+  }
+  return Result;
+}
+
+inline int
+GetEaCycles(instruction_operand Operand)
+{
+  effective_address_expression Address = Operand.Address;
+  
+  int Result = 0;
+
+  int NumRegs = 0;
+  const char *Reg1Name = 0;
+  const char *Reg2Name = 0;
+  for (u32 Index = 0; Index < ArrayCount(Address.Terms); ++Index)
+  {
+    effective_address_term Term = Address.Terms[Index];
+    register_access Reg = Term.Register;
+    if (Reg.Index)
+    {
+      NumRegs++;
+      if (Reg1Name == 0)
+      {
+        Reg1Name = GetRegName(Reg);
+      }
+      else if (Reg2Name == 0)
+      {
+        Reg2Name = GetRegName(Reg);
+      }
+      else
+      {
+        assert(!"Three registers not allowed!");
+      }
+    }
+  }
+
+  bool HasDisp_Only = (Address.Displacement != 0) && (NumRegs == 0);
+  bool HasBase_Or_Index_Only = (Address.Displacement == 0) && (NumRegs == 1); 
+  bool HasDisplacement_Plus_Base_Or_Index = (Address.Displacement != 0) && 
+    (NumRegs == 1);
+  bool HasBase_Plus_Index_BPDI_BXSI = (Address.Displacement == 0) && 
+    (
+      (Cmp("bp", Reg1Name) && Cmp("di", Reg2Name)) ||
+      (Cmp("bx", Reg1Name) && Cmp("si", Reg2Name))
+    );
+  bool HasBase_Plus_Index_BPSI_BXDI = (Address.Displacement == 0) && 
+    (
+      (Cmp("bp", Reg1Name) && Cmp("si", Reg2Name)) ||
+      (Cmp("bx", Reg1Name) && Cmp("di", Reg2Name))
+    );
+  bool HasDisp_Base_Index_BPDIDISP_BXSIDISP = (Address.Displacement != 0) &&
+    (
+     (Cmp("bp", Reg1Name) && Cmp("di", Reg2Name)) ||
+     (Cmp("bx", Reg1Name) && Cmp("si", Reg2Name))
+    );
+  bool HasDisp_Base_Index_BPSIDISP_BXDIDISP = (Address.Displacement != 0) &&
+    (
+     (Cmp("bp", Reg1Name) && Cmp("si", Reg2Name)) ||
+     (Cmp("bx", Reg1Name) && Cmp("di", Reg2Name))
+    );
+
+  if (HasDisp_Only)
+  {
+    Result = 6;
+  }
+  else if (HasBase_Or_Index_Only)
+  {
+    Result = 5;
+  }
+  else if (HasDisplacement_Plus_Base_Or_Index)
+  {
+    Result = 9;
+  }
+  else if (HasBase_Plus_Index_BPDI_BXSI)
+  {
+    Result = 7;
+  }
+  else if (HasBase_Plus_Index_BPSI_BXDI)
+  {
+    Result = 8;
+  }
+  else if (HasDisp_Base_Index_BPDIDISP_BXSIDISP)
+  {
+    Result = 11;
+  }
+  else if (HasDisp_Base_Index_BPSIDISP_BXDIDISP)
+  {
+    Result = 12;
+  }
+  else
+  {
+    assert(!"Unrecognized addressing scheme");
+  }
+
+  return Result;
+}
+
+static void
+PrintCycleCount(instruction Instruction)
+{
+  int Cycles = 0;
+  // If instruction should have ea_cycles then add that
+  int EaCycles = 0;
+
+  instruction_operand SourceOperand = Instruction.Operands[1];
+  instruction_operand DestOperand = Instruction.Operands[0];
+
+  // Find the Instruction in cycle_counts and get Cycles
+  if (Instruction.Op == Op_mov)
+  {
+    if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Memory)
+    {
+      const char *RegName = GetRegName(DestOperand.Register);
+      bool IsAccumulator = Cmp("al", RegName);
+      if (IsAccumulator)
+      {
+        Cycles = 10;
+        EaCycles = 0;
+      }
+      else
+      {
+        Cycles = 8;
+        EaCycles = GetEaCycles(SourceOperand);
+      }
+    }
+    else if (DestOperand.Type == Operand_Memory && SourceOperand.Type == Operand_Register)
+    {
+      const char *RegName = GetRegName(DestOperand.Register);
+      bool IsAccumulator = Cmp("al", RegName);
+      if (IsAccumulator)
+      {
+        Cycles = 10;
+        EaCycles = 0;
+      }
+      else
+      {
+        Cycles = 9;
+        EaCycles = GetEaCycles(DestOperand);
+      }
+    }
+    else if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Register)
+    {
+      Cycles = 2;
+      EaCycles = 0;
+    }
+    else if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Immediate)
+    {
+      Cycles = 4;
+      EaCycles = 0;
+    }
+    else if (DestOperand.Type == Operand_Memory && SourceOperand.Type == Operand_Immediate)
+    {
+      Cycles = 10;
+      EaCycles = GetEaCycles(DestOperand);
+    }
+    else
+    {
+      assert(!"Not implemented operand combination!");
+    }
+    
+  }
+  else if (Instruction.Op == Op_add)
+  {
+    if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Memory)
+    {
+      Cycles = 9;
+      EaCycles = GetEaCycles(SourceOperand);
+    }
+    else if (DestOperand.Type == Operand_Memory && SourceOperand.Type == Operand_Register)
+    {
+      Cycles = 16;
+      EaCycles = GetEaCycles(DestOperand);
+    }
+    else if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Register)
+    {
+      Cycles = 3;
+      EaCycles = 0;
+    }
+    else if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Immediate)
+    {
+      Cycles = 4;
+      EaCycles = 0;
+    }
+    else if (DestOperand.Type == Operand_Memory && SourceOperand.Type == Operand_Immediate)
+    {
+      Cycles = 17;
+      EaCycles = GetEaCycles(DestOperand);
+    }
+    else
+    {
+      assert(!"Not implemented operand combination!");
+    }
+  }
+  else
+  {
+    assert(!"Cycle count not implemented!");
+  }
+
+  fprintf(stdout, "%d; %d; ", Cycles, EaCycles);
+}
+
 static void 
 DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart)
 {
@@ -46,6 +274,7 @@ DisAsm8086Wasm(u32 DisAsmByteCount, segmented_access DisAsmStart)
       }
       
       fprintf(stdout, "%d; ", Instruction.Size);
+      PrintCycleCount(Instruction);
       PrintInstruction(Instruction, stdout);
       fprintf(stdout, "\n\0");
     }
@@ -405,6 +634,10 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
   // 64KB = 1 << 16
   segmented_access DataSegment = MoveBaseBy(CodeSegment, (1 << 16));
   s32 DataSegmentAddress = GetAbsoluteAddressOf(DataSegment, 0);
+
+  segmented_access StackSegment = MoveBaseBy(DataSegment, (1 << 16));
+  s32 StackSegmentAddress = GetAbsoluteAddressOf(StackSegment, 0);
+
   OutputMemory = AllocateOutputBuffer(CodeSegment, MaxMemory);
 
   instruction_table Table = Get8086InstructionTable();
@@ -605,6 +838,24 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
       *IP += SourceValue;
     }
   }
+  else if (Instruction.Op == Op_jmp)
+  {
+    s32 SourceValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else if (Instruction.Operands[0].Type == Operand_Register)
+    {
+      SourceValue = GetRegister(Instruction.Operands[1].Register);
+    }
+    else
+    {
+      assert(!"Don't know how to jump!");
+    }
+
+    *IP += SourceValue;
+  }
   else if (Instruction.Op == Op_loopnz)
   {
     s32 SourceValue;
@@ -644,6 +895,75 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     {
       *IP += SourceValue;
     }
+  }
+  else if (Instruction.Op == Op_pop)
+  {
+    if (Instruction.Operands[0].Type == Operand_Register)
+    {
+      u16 *SP = &RegisterBank.Registers[5]; 
+      u8 *MemoryLocation = AccessMemory(StackSegment, *SP);
+      u8 LowByte = *MemoryLocation++;
+      u8 HighByte = *MemoryLocation++;
+      *SP = *SP - 2;
+      SetRegister(Instruction.Operands[0].Register, (HighByte << 8) | LowByte);
+    }
+    else
+    {
+      assert(!"Cannot pop to non register");
+    }
+  }
+  else if (Instruction.Op == Op_push)
+  {
+    if (Instruction.Operands[0].Type == Operand_Register)
+    {
+      u16 *SP = &RegisterBank.Registers[5]; 
+      u8 *MemoryLocation = AccessMemory(StackSegment, *SP);
+      u16 Value = GetRegister(Instruction.Operands[0].Register);
+      *MemoryLocation++ = Value & 0xff; 
+      *MemoryLocation++ = Value >> 8;
+      *SP = *SP + 2;
+    }
+    else
+    {
+      assert(!"Cannot push from non register");
+    }
+  }
+  else if (Instruction.Op == Op_call)
+  {
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      u16 *IP = &RegisterBank.Registers[13];
+      u16 *SP = &RegisterBank.Registers[5]; 
+
+      u8 *MemoryLocation = AccessMemory(StackSegment, *SP);
+      for (s32 RegIndex = 1; RegIndex < 15; ++RegIndex)
+      {
+        *MemoryLocation++ = RegisterBank.Registers[RegIndex] & 0xff;
+        *MemoryLocation++ = RegisterBank.Registers[RegIndex] >> 8;
+        *SP += 2;
+      }
+      
+      *IP += Instruction.Operands[0].Immediate.Value;
+    }
+    else
+    {
+      assert(!"Invalid call");
+    }
+  }
+  else if (Instruction.Op == Op_ret)
+  {
+    u16 *IP = &RegisterBank.Registers[13];
+    u16 *SP = &RegisterBank.Registers[5]; 
+
+    u8 *MemoryLocation = AccessMemory(StackSegment, *SP);
+    
+    u16 StacksIPValue = *MemoryLocation; 
+    for (s32 RegIndex = 0; RegIndex < 28; ++RegIndex)
+    {
+      s16 LowValue = RegisterBank.Registers[RegIndex];
+    }
+
+    *IP += Instruction.Operands[0].Immediate.Value;
   }
   else 
   {

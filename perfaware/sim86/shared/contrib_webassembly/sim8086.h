@@ -56,3 +56,4 @@ struct bitwise_add_result
   bool Carry;
   bool Overflow;
 };
+
