@@ -152,6 +152,8 @@ PrintCycleCount(instruction Instruction)
   // If instruction should have ea_cycles then add that
   int EaCycles = 0;
 
+  int TransferCycles = 0;
+
   instruction_operand SourceOperand = Instruction.Operands[1];
   instruction_operand DestOperand = Instruction.Operands[0];
 
@@ -172,6 +174,8 @@ PrintCycleCount(instruction Instruction)
         Cycles = 8;
         EaCycles = GetEaCycles(SourceOperand);
       }
+
+      TransferCycles = 4;
     }
     else if (DestOperand.Type == Operand_Memory && SourceOperand.Type == Operand_Register)
     {
@@ -187,6 +191,7 @@ PrintCycleCount(instruction Instruction)
         Cycles = 9;
         EaCycles = GetEaCycles(DestOperand);
       }
+      TransferCycles = 4;
     }
     else if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Register)
     {
@@ -202,6 +207,7 @@ PrintCycleCount(instruction Instruction)
     {
       Cycles = 10;
       EaCycles = GetEaCycles(DestOperand);
+      TransferCycles = 4;
     }
     else
     {
@@ -215,11 +221,13 @@ PrintCycleCount(instruction Instruction)
     {
       Cycles = 9;
       EaCycles = GetEaCycles(SourceOperand);
+      TransferCycles = 4;
     }
     else if (DestOperand.Type == Operand_Memory && SourceOperand.Type == Operand_Register)
     {
       Cycles = 16;
       EaCycles = GetEaCycles(DestOperand);
+      TransferCycles = 8;
     }
     else if (DestOperand.Type == Operand_Register && SourceOperand.Type == Operand_Register)
     {
@@ -235,6 +243,7 @@ PrintCycleCount(instruction Instruction)
     {
       Cycles = 17;
       EaCycles = GetEaCycles(DestOperand);
+      TransferCycles = 8;
     }
     else
     {
@@ -246,7 +255,7 @@ PrintCycleCount(instruction Instruction)
     assert(!"Cycle count not implemented!");
   }
 
-  fprintf(stdout, "%d; %d; ", Cycles, EaCycles);
+  fprintf(stdout, "%d; %d; %d; ", Cycles, EaCycles, TransferCycles);
 }
 
 static void 
