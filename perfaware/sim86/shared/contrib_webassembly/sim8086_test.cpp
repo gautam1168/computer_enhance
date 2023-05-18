@@ -211,7 +211,10 @@ PrintCycleCount(instruction Instruction)
     }
     else
     {
-      assert(!"Not implemented operand combination!");
+      // assert(!"Not implemented operand combination!");
+      Cycles = -1;
+      EaCycles = -1;
+      TransferCycles = -1;
     }
     
   }
@@ -247,12 +250,18 @@ PrintCycleCount(instruction Instruction)
     }
     else
     {
-      assert(!"Not implemented operand combination!");
+      // assert(!"Not implemented operand combination!");
+      Cycles = -1;
+      EaCycles = -1;
+      TransferCycles = -1;
     }
   }
   else
   {
-    assert(!"Cycle count not implemented!");
+    // assert(!"Cycle count not implemented!");
+    Cycles = -1;
+    EaCycles = -1;
+    TransferCycles = -1;
   }
 
   fprintf(stdout, "%d; %d; %d; ", Cycles, EaCycles, TransferCycles);
@@ -635,6 +644,29 @@ SetFlags(bitwise_add_result Result)
   RegisterBank.Registers[14] = FinalRegister;
 }
 
+inline void
+ResetFlagsForXOR()
+{
+  u16 FlagsRegister = RegisterBank.Registers[14];
+  flags Flags = RegisterToFlags(FlagsRegister);
+  // Flags to update AF, CF, OF, PF, SF, ZF
+  Flags.OF = 0;
+  Flags.CF = 0;
+  u16 FinalRegister = FlagsToRegister(Flags);
+  RegisterBank.Registers[14] = FinalRegister;
+}
+
+inline void
+SetZFlag()
+{
+  u16 FlagsRegister = RegisterBank.Registers[14];
+  flags Flags = RegisterToFlags(FlagsRegister);
+  // Flags to update AF, CF, OF, PF, SF, ZF
+  Flags.ZF = 0;
+  u16 FinalRegister = FlagsToRegister(Flags);
+  RegisterBank.Registers[14] = FinalRegister;
+}
+
 extern "C" register_bank *
 Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
 {
@@ -973,6 +1005,61 @@ Step(u8 *Memory, u32 BytesRead, u64 MaxMemory)
     }
 
     *IP += Instruction.Operands[0].Immediate.Value;
+  }
+  else if (Instruction.Op == Op_test)
+  {
+    s32 SourceValue;   
+    if (Instruction.Operands[1].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[1].Immediate.Value;
+    }
+    else if (Instruction.Operands[1].Type == Operand_Register)
+    {
+      SourceValue = GetRegister(Instruction.Operands[1].Register);
+    }
+
+    s32 DestValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      DestValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else if (Instruction.Operands[0].Type == Operand_Register)
+    {
+      DestValue = GetRegister(Instruction.Operands[0].Register);
+    }
+
+    u16 Result = (u16)DestValue & (u16)SourceValue;
+
+    if (Result > 0)
+    {
+      SetZFlag();
+    }
+  }
+  else if (Instruction.Op == Op_xor)
+  {
+    s32 SourceValue;   
+    if (Instruction.Operands[1].Type == Operand_Immediate)
+    {
+      SourceValue = Instruction.Operands[1].Immediate.Value;
+    }
+    else if (Instruction.Operands[1].Type == Operand_Register)
+    {
+      SourceValue = GetRegister(Instruction.Operands[1].Register);
+    }
+
+    s32 DestValue;
+    if (Instruction.Operands[0].Type == Operand_Immediate)
+    {
+      DestValue = Instruction.Operands[0].Immediate.Value;
+    }
+    else if (Instruction.Operands[0].Type == Operand_Register)
+    {
+      DestValue = GetRegister(Instruction.Operands[0].Register);
+    }
+    
+    u16 Result = SourceValue ^ DestValue; 
+    SetRegister(Instruction.Operands[0].Register, Result);
+    ResetFlagsForXOR();
   }
   else 
   {
